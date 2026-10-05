@@ -1,4 +1,5 @@
 import os
+from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -6,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from .db import init_db
 from .events import event, to_sse
 
 load_dotenv()
@@ -20,7 +22,14 @@ else:
 
 MAX_ITERATIONS = int(os.getenv("MAX_ITERATIONS", "6"))
 
-app = FastAPI(title="Harness Inspector API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await init_db()  # create event_log if needed; fails fast if the database is unreachable
+    yield
+
+
+app = FastAPI(title="Harness Inspector API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
