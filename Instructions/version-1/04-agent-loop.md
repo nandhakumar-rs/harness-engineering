@@ -18,7 +18,10 @@ Put a system message at the front of the conversation:
 
 ```python
 SYSTEM_PROMPT = """You are a customer support agent.
-For every ticket:
+If the message is a greeting, small talk, or doesn't describe a support issue,
+reply briefly and ask how you can help. Do not call any tools.
+
+If it is a support ticket:
 1. classifyTicket
 2. searchKnowledgeBase with the category
 3. draftReply using what you found
@@ -27,6 +30,11 @@ Then summarise what you did in one or two sentences."""
 
 messages = [{"role": "system", "content": SYSTEM_PROMPT}, *messages]
 ```
+
+> **Why the "greeting" rule matters: try sending `Hi` without it.**
+> If the prompt only says "For every ticket: 1. classifyTicket…", the model treats *every* message as a ticket. Send `Hi` and it runs all four tools. Because `category` is an enum with no "none of these" option, it has to pick one, say `billing`, and then it sends a billing email to someone who only said hello.
+>
+> The model did exactly what the harness told it to. **The system prompt and the tool schemas are part of the harness**, and the model calls tools only because they decide it should. Giving it a "don't call any tools" path makes `Hi` a single iteration that just streams a short greeting.
 
 ## 4.2 Call the model, streaming
 
