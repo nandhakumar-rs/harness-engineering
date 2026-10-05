@@ -33,6 +33,7 @@ I can't log in. The reset password email never arrives.
 - [ ] The final answer **streams in** word by word.
 - [ ] The Event stream shows `run.started`, one `iteration.started` per model call, the tool events, the `message.delta` events and `run.completed`.
 - [ ] With `MAX_ITERATIONS=2` the run stops with `run.failed`.
+- [ ] Sending `Hi` gets a short greeting back with **no tool calls** (1 iteration). See the note in Step 4.1.
 - [ ] Your code uses only `client.chat.completions.create` from the SDK.
 
 ## Stretch goals
