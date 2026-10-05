@@ -73,7 +73,7 @@ Emit these from `agent.py` with `event("tool.requested", toolCallId=..., name=..
 
 **Rule for this cohort:** the OpenAI SDK is used **only** to call the model and pass tool definitions. No Agents SDK, no built-in runners, hooks or tool helpers. You write the loop.
 
-📘 **Step-by-step guide:** [`Instructions/`](Instructions/README.md), with one file per step, code hints and a check at the end of each.
+📘 **Step-by-step guide:** [`Instructions/version-1/`](Instructions/version-1/README.md), with one file per step, code hints and a check at the end of each.
 
 ### Tasks
 
