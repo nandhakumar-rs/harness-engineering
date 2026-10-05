@@ -8,8 +8,9 @@ tool definitions. No built-in agents, runners or hooks — the loop is yours.
         response = model(messages, tools)          # streamed
         no tool calls?  -> done
         for each tool call: run it, append the result to messages
+    ran out of iterations? -> run.failed
 
-Still TODO: Step 5 (cap the loop at max_iterations), Step 6 (thinking events).
+Still TODO: Step 6 (thinking events).
 """
 
 import json
@@ -39,9 +40,8 @@ async def run_agent(messages: list[dict], max_iterations: int = 6) -> AsyncItera
     messages = [{"role": "system", "content": SYSTEM_PROMPT}, *messages]
     yield event("run.started", runId=run_id)
 
-    iteration = 0
-    while True:  # Step 5 replaces this with a bounded loop
-        iteration += 1
+    # One iteration = one model call. The cap is ours, not the SDK's.
+    for iteration in range(1, max_iterations + 1):
         yield event("iteration.started", iteration=iteration, max=max_iterations)
 
         # 4.2 Call the model, streaming
@@ -105,3 +105,6 @@ async def run_agent(messages: list[dict], max_iterations: int = 6) -> AsyncItera
                 "tool_call_id": c["id"],
                 "content": json.dumps(result),
             })
+
+    # The loop ran out without the model finishing: the cap was hit.
+    yield event("run.failed", runId=run_id, error=f"max_iterations ({max_iterations}) reached")
