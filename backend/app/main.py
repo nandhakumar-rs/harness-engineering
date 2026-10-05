@@ -10,8 +10,8 @@ from .events import event, to_sse
 
 load_dotenv()
 
-# Session 1: flip this to False once app/agent.py is implemented.
-USE_FAKE_AGENT = True
+# Set to True to go back to the scripted fake run in app/fake_agent.py.
+USE_FAKE_AGENT = False
 
 if USE_FAKE_AGENT:
     from .fake_agent import run_fake_agent as run
