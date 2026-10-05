@@ -50,5 +50,6 @@ async def run_fake_agent(messages: list[dict], max_iterations: int = 6) -> Async
     for word in FAKE_ANSWER.split(" "):
         yield event("message.delta", text=word + " ")
         await asyncio.sleep(0.03)
+    yield event("message.completed", text=FAKE_ANSWER)
 
     yield event("run.completed", runId=run_id, iterations=iteration)

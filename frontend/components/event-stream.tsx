@@ -11,6 +11,7 @@ const TYPE_COLOR: Record<HarnessEventType, string> = {
   "iteration.started": "text-violet-500",
   thinking: "text-muted-foreground",
   "message.delta": "text-zinc-400",
+  "message.completed": "text-zinc-300",
   "tool.requested": "text-amber-500",
   "tool.completed": "text-emerald-500",
   "tool.failed": "text-red-500",

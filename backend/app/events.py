@@ -1,6 +1,7 @@
 """The event protocol shared by the backend and the UI.
 
-Every event the harness emits has the same shape: { id, ts, type, data }.
+Every event the harness emits has the same shape: { id, ts, type, data, seq }.
+seq is set when the event is stored in event_log (message.delta never is).
 The frontend mirrors these types in frontend/lib/events.ts.
 """
 
@@ -18,6 +19,7 @@ EventType = Literal[
     "iteration.started",
     "thinking",
     "message.delta",
+    "message.completed",
     "tool.requested",
     "tool.completed",
     "tool.failed",
@@ -29,6 +31,7 @@ class Event(BaseModel):
     ts: float = Field(default_factory=lambda: time.time() * 1000)
     type: EventType
     data: dict[str, Any] = Field(default_factory=dict)
+    seq: int | None = None  # position in event_log; None for live-only events
 
 
 def event(type: EventType, **data: Any) -> Event:

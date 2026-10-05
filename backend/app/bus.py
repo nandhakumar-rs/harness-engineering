@@ -40,11 +40,16 @@ async def publish(run_id: str, event: dict[str, Any], conn: psycopg.AsyncConnect
     Pass `conn` to send the NOTIFY inside your own transaction: Postgres then
     delivers it only when that transaction commits.
     """
+    payload = notify_payload(run_id, event)
+    await (conn or await _publisher_conn()).execute("SELECT pg_notify(%s, %s)", (CHANNEL, payload))
+
+
+def notify_payload(run_id: str, event: dict[str, Any]) -> str:
+    """The NOTIFY message for an event, or a pointer to its event_log row if it's too big."""
     payload = json.dumps({"runId": run_id, "event": event})
     if len(payload.encode()) > MAX_PAYLOAD:
-        # Too big to carry: send a pointer, subscribers load the row from event_log.
         payload = json.dumps({"runId": run_id, "ref": {"seq": event.get("seq"), "type": event.get("type")}})
-    await (conn or await _publisher_conn()).execute("SELECT pg_notify(%s, %s)", (CHANNEL, payload))
+    return payload
 
 
 @asynccontextmanager

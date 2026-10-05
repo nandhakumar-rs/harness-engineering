@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from . import bus
+from . import bus, event_store
 from .db import init_db
 from .events import event, to_sse
 
@@ -28,7 +28,9 @@ MAX_ITERATIONS = int(os.getenv("MAX_ITERATIONS", "6"))
 async def lifespan(app: FastAPI):
     await init_db()  # create event_log if needed; fails fast if the database is unreachable
     await bus.start()  # LISTEN for live events
+    await event_store.start()
     yield
+    await event_store.stop()  # flush pending writes first
     await bus.stop()
 
 
@@ -60,11 +62,14 @@ async def chat(req: ChatRequest):
     messages = [m.model_dump() for m in req.messages]
 
     async def stream():
+        recorder = event_store.RunRecorder()  # stores every event in event_log as it streams
         try:
             async for e in run(messages, max_iterations=MAX_ITERATIONS):
-                yield to_sse(e)
+                yield to_sse(recorder.record(e))
         except Exception as exc:  # surface errors in the event stream instead of dropping the connection
-            yield to_sse(event("run.failed", error=f"{type(exc).__name__}: {exc}"))
+            yield to_sse(recorder.record(event("run.failed", error=f"{type(exc).__name__}: {exc}")))
+        finally:
+            recorder.finish()
 
     return StreamingResponse(
         stream(),

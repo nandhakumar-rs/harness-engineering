@@ -85,6 +85,10 @@ async def run_agent(messages: list[dict], max_iterations: int = 6) -> AsyncItera
         if thinking:  # the stream ended without a single chunk; never leave the indicator stuck
             yield event("thinking", status="stopped")
 
+        # The deltas are live-only; the full text is stored once as message.completed.
+        if text:
+            yield event("message.completed", text=text)
+
         # 4.4 Remember what the model said, including the tool calls it asked for
         assistant_msg: dict[str, Any] = {"role": "assistant", "content": text or None}
         if calls:

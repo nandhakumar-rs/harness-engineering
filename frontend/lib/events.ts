@@ -7,11 +7,13 @@ export type HarnessEvent =
   | E<"iteration.started", { iteration: number; max: number }>
   | E<"thinking", { status: "started" | "stopped" }>
   | E<"message.delta", { text: string }>
+  | E<"message.completed", { text: string }>
   | E<"tool.requested", { toolCallId: string; name: string; args: unknown }>
   | E<"tool.completed", { toolCallId: string; result: unknown }>
   | E<"tool.failed", { toolCallId: string; error: string }>
 
-type E<T extends string, D> = { id: string; ts: number; type: T; data: D }
+// seq: position in event_log (null for live-only events like message.delta)
+type E<T extends string, D> = { id: string; ts: number; type: T; data: D; seq?: number | null }
 
 export type HarnessEventType = HarnessEvent["type"]
 
