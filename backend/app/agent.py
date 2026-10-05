@@ -27,7 +27,10 @@ client = AsyncOpenAI()  # reads OPENAI_API_KEY from the environment
 MODEL = os.getenv("MODEL", "gpt-4.1-mini")
 
 SYSTEM_PROMPT = """You are a customer support agent.
-For every ticket:
+If the message is a greeting, small talk, or doesn't describe a support issue,
+reply briefly and ask how you can help. Do not call any tools.
+
+If it is a support ticket:
 1. classifyTicket
 2. searchKnowledgeBase with the category
 3. draftReply using what you found
