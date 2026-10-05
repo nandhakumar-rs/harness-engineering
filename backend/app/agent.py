@@ -10,7 +10,7 @@ tool definitions. No built-in agents, runners or hooks — the loop is yours.
         for each tool call: run it, append the result to messages
     ran out of iterations? -> run.failed
 
-Still TODO: Step 6 (thinking events).
+Step 7 switches main.py from the fake agent to this one.
 """
 
 import json
@@ -44,7 +44,8 @@ async def run_agent(messages: list[dict], max_iterations: int = 6) -> AsyncItera
     for iteration in range(1, max_iterations + 1):
         yield event("iteration.started", iteration=iteration, max=max_iterations)
 
-        # 4.2 Call the model, streaming
+        # 4.2 Call the model, streaming. "Thinking" covers the wait for the first chunk.
+        yield event("thinking", status="started")
         stream = await client.chat.completions.create(
             model=MODEL,
             messages=messages,
@@ -56,7 +57,11 @@ async def run_agent(messages: list[dict], max_iterations: int = 6) -> AsyncItera
         # tool calls arrive in fragments and are stitched together by index
         text = ""
         calls: dict[int, dict[str, str]] = {}
+        thinking = True
         async for chunk in stream:
+            if thinking:
+                thinking = False
+                yield event("thinking", status="stopped")
             if not chunk.choices:
                 continue
             delta = chunk.choices[0].delta
@@ -73,6 +78,9 @@ async def run_agent(messages: list[dict], max_iterations: int = 6) -> AsyncItera
                     call["name"] += tc.function.name
                 if tc.function and tc.function.arguments:
                     call["arguments"] += tc.function.arguments
+
+        if thinking:  # the stream ended without a single chunk; never leave the indicator stuck
+            yield event("thinking", status="stopped")
 
         # 4.4 Remember what the model said, including the tool calls it asked for
         assistant_msg: dict[str, Any] = {"role": "assistant", "content": text or None}
