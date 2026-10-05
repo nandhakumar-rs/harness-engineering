@@ -75,6 +75,8 @@ Emit these from `agent.py` with `event("tool.requested", toolCallId=..., name=..
 
 📘 **Step-by-step guide:** [`Instructions/version-1/`](Instructions/version-1/README.md), with one file per step, code hints and a check at the end of each.
 
+📖 **How it works:** [`docs/`](docs/README.md) explains the concepts behind each session in plain English, with diagrams and the questions asked along the way.
+
 ### Tasks
 
 - [ ] **1. Knowledge base** (`backend/app/knowledge_base.py`)
