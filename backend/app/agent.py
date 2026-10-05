@@ -15,7 +15,6 @@ Step 7 switches main.py from the fake agent to this one.
 
 import json
 import os
-import uuid
 from typing import Any, AsyncIterator
 
 from openai import AsyncOpenAI
@@ -38,10 +37,10 @@ If it is a support ticket:
 Then summarise what you did in one or two sentences."""
 
 
-async def run_agent(messages: list[dict], max_iterations: int = 6) -> AsyncIterator[Event]:
-    run_id = uuid.uuid4().hex[:8]
+async def run_agent(run_id: str, messages: list[dict], max_iterations: int = 6) -> AsyncIterator[Event]:
+    user_input = messages[-1]["content"] if messages else ""
     messages = [{"role": "system", "content": SYSTEM_PROMPT}, *messages]
-    yield event("run.started", runId=run_id)
+    yield event("run.started", runId=run_id, input=user_input)
 
     # One iteration = one model call. The cap is ours, not the SDK's.
     for iteration in range(1, max_iterations + 1):

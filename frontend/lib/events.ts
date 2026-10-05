@@ -1,7 +1,7 @@
 // Mirror of backend/app/events.py — every event is { id, ts, type, data }.
 
 export type HarnessEvent =
-  | E<"run.started", { runId: string }>
+  | E<"run.started", { runId: string; input?: string }>
   | E<"run.completed", { runId: string; iterations?: number }>
   | E<"run.failed", { runId?: string; error: string }>
   | E<"iteration.started", { iteration: number; max: number }>
@@ -21,7 +21,7 @@ export type ToolStatus = "running" | "completed" | "failed"
 
 export type ChatItem =
   | { kind: "user"; id: string; text: string }
-  | { kind: "assistant"; id: string; text: string }
+  | { kind: "assistant"; id: string; text: string; completed?: boolean }
   | {
       kind: "tool"
       id: string

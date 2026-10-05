@@ -40,5 +40,10 @@ def event(type: EventType, **data: Any) -> Event:
 
 
 def to_sse(e: Event) -> str:
-    """Serialize one event as a Server-Sent Events message."""
-    return f"data: {json.dumps(e.model_dump())}\n\n"
+    """Serialize one event as a Server-Sent Events message.
+
+    Stored events also get an `id:` line (their seq), the SSE convention for
+    "where was I?" when a client reconnects.
+    """
+    id_line = f"id: {e.seq}\n" if e.seq is not None else ""
+    return f"{id_line}data: {json.dumps(e.model_dump())}\n\n"

@@ -1,27 +1,17 @@
-import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
-
-from . import bus, event_store
-from .db import init_db
-from .events import event, to_sse
 
 load_dotenv()
 
-# Set to True to go back to the scripted fake run in app/fake_agent.py.
-USE_FAKE_AGENT = False
+from fastapi import FastAPI  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+from fastapi.responses import StreamingResponse  # noqa: E402
+from pydantic import BaseModel, Field  # noqa: E402
 
-if USE_FAKE_AGENT:
-    from .fake_agent import run_fake_agent as run
-else:
-    from .agent import run_agent as run
-
-MAX_ITERATIONS = int(os.getenv("MAX_ITERATIONS", "6"))
+from . import bus, event_store, runs  # noqa: E402
+from .db import init_db  # noqa: E402
+from .events import to_sse  # noqa: E402
 
 
 @asynccontextmanager
@@ -48,28 +38,30 @@ class ChatMessage(BaseModel):
     content: str
 
 
-class ChatRequest(BaseModel):
+class StartRun(BaseModel):
+    # The client picks the id, so sending the same request twice can't start two runs.
+    runId: str = Field(pattern=r"^[A-Za-z0-9_-]{4,64}$")
     messages: list[ChatMessage]
 
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "agent": "fake" if USE_FAKE_AGENT else "openai"}
+    return {"ok": True, "agent": "fake" if runs.USE_FAKE_AGENT else "openai"}
 
 
-@app.post("/api/chat")
-async def chat(req: ChatRequest):
-    messages = [m.model_dump() for m in req.messages]
+@app.post("/api/runs")
+async def start_run(req: StartRun):
+    started = await runs.start_run(req.runId, [m.model_dump() for m in req.messages])
+    return {"runId": req.runId, "started": started}
+
+
+@app.get("/api/runs/{run_id}/events")
+async def run_events(run_id: str, after: int = 0):
+    """SSE: everything after `after` from event_log (catch-up), then live events from the bus."""
 
     async def stream():
-        recorder = event_store.RunRecorder()  # stores every event in event_log as it streams
-        try:
-            async for e in run(messages, max_iterations=MAX_ITERATIONS):
-                yield to_sse(recorder.record(e))
-        except Exception as exc:  # surface errors in the event stream instead of dropping the connection
-            yield to_sse(recorder.record(event("run.failed", error=f"{type(exc).__name__}: {exc}")))
-        finally:
-            recorder.finish()
+        async for e in runs.watch_run(run_id, after):
+            yield to_sse(e)
 
     return StreamingResponse(
         stream(),

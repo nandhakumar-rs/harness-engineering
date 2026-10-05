@@ -25,9 +25,8 @@ FAKE_ANSWER = (
 )
 
 
-async def run_fake_agent(messages: list[dict], max_iterations: int = 6) -> AsyncIterator[Event]:
-    run_id = uuid.uuid4().hex[:8]
-    yield event("run.started", runId=run_id)
+async def run_fake_agent(run_id: str, messages: list[dict], max_iterations: int = 6) -> AsyncIterator[Event]:
+    yield event("run.started", runId=run_id, input=messages[-1]["content"] if messages else "")
 
     iteration = 0
     for name, args, result in FAKE_STEPS:

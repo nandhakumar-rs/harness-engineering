@@ -2,7 +2,7 @@
 
 **Durability** means a run **survives things going wrong**: a page refresh, a dropped connection, a server crash. It doesn't get lost, and finished work doesn't get done twice.
 
-> **Status on `version-3`:** sections 1–7 are built (Postgres, `event_log`, event bus, recording events). Sections 8–10 (the run/viewer split and DBOS workflows) are **planned** and explained here ahead of time.
+> **Status on `version-3`:** sections 1–8 are built (Postgres, `event_log`, event bus, recording events, the run/viewer split). Sections 9–10 (DBOS workflows and recovery) are **planned** and explained here ahead of time.
 
 ---
 
@@ -171,7 +171,7 @@ flowchart LR
 
 ---
 
-## 8. Splitting the run from the viewer (planned)
+## 8. Splitting the run from the viewer
 
 The current `POST /api/chat` both **starts** a run and **streams** it. It will become two endpoints:
 
@@ -194,6 +194,13 @@ sequenceDiagram
 ```
 
 Now the run **doesn't belong to any request**. Close the tab and it keeps going. Open it again and you catch up.
+
+### Details that make it work
+- **The browser picks the `runId`.** If the same `POST /api/runs` arrives twice, for example after a double click or a retried request, the second one returns `started: false` and nothing runs twice. DBOS uses the same idea later, with a workflow ID.
+- **Subscribe first, then read the log.** Anything committed after the read is already waiting in the subscription, so nothing falls into the gap between catch-up and live. Events that turn up in both places are skipped by `seq`.
+- **Refresh rebuilds the screen from the log.** The last `runId` is kept in the browser. `run.started` carries the user's message (`input`), so even the chat bubble comes back.
+- **Live words arrive in batches.** While one database round trip is in flight, new `message.delta`s pile up and are sent as one merged notification. When `message.completed` arrives, its full stored text replaces whatever words were shown live.
+- **Gotcha we hit: never let a request cancel a query on a shared connection.** A browser refresh cancelled a catch-up query halfway through. That left the shared database connection stuck ("another command is already in progress"), and every later write failed. The fix: reads are **shielded**, so they always finish, and a broken connection is reset and retried.
 
 ---
 
