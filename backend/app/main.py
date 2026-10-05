@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from . import bus
 from .db import init_db
 from .events import event, to_sse
 
@@ -26,7 +27,9 @@ MAX_ITERATIONS = int(os.getenv("MAX_ITERATIONS", "6"))
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()  # create event_log if needed; fails fast if the database is unreachable
+    await bus.start()  # LISTEN for live events
     yield
+    await bus.stop()
 
 
 app = FastAPI(title="Harness Inspector API", lifespan=lifespan)
