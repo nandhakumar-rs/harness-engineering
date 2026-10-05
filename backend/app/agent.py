@@ -27,9 +27,15 @@ Outline:
     # loop ran out -> yield event("run.failed", error="max_iterations reached")
 """
 
+import os
 from typing import AsyncIterator
 
+from openai import AsyncOpenAI
+
 from .events import Event
+
+client = AsyncOpenAI()  # reads OPENAI_API_KEY from the environment
+MODEL = os.getenv("MODEL", "gpt-4.1-mini")
 
 
 async def run_agent(messages: list[dict], max_iterations: int = 6) -> AsyncIterator[Event]:
