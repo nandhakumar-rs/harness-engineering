@@ -1,12 +1,9 @@
 """Records a run's events into event_log and announces each one on the bus.
 
-    recorder = RunRecorder()
-    async for e in run(...):
-        recorder.record(e)     # numbers + queues the event, returns immediately
-    recorder.finish()          # writes whatever is still queued, then stops
+    record(run_id, e)   # queues the event, returns immediately; safe from any thread
+    finish(run_id)      # writes whatever is still queued for that run, then stops
 
-Every event except message.delta is stored, with a seq numbered 1, 2, 3...
-within its run. Writing and notifying is ONE statement:
+Every event except message.delta is stored under the seq the workflow gave it. Writing and notifying is ONE statement:
 
     INSERT ... ON CONFLICT (run_id, seq) DO NOTHING   -- a repeated event is skipped
     then pg_notify(...) only for a row that was really inserted
@@ -49,6 +46,8 @@ _conn: psycopg.AsyncConnection | None = None
 _conn_lock = asyncio.Lock()  # opening the shared connection
 _db_lock = asyncio.Lock()    # one command at a time on the shared connection
 _writers: set[asyncio.Task] = set()  # keep running writers referenced until they finish
+_recorders: dict[str, "RunRecorder"] = {}
+_loop: asyncio.AbstractEventLoop | None = None  # the app's event loop: all database work happens here
 
 
 async def _connection() -> psycopg.AsyncConnection:
@@ -90,7 +89,41 @@ async def _fetch(sql: str, params: tuple) -> list[tuple]:
 
 
 async def start() -> None:
+    global _loop
+    _loop = asyncio.get_running_loop()
     await _connection()  # open it at startup so the first write doesn't pay the connection cost
+
+
+def record(run_id: str, e: Event) -> None:
+    """Queue an event for a run. Callable from any thread or event loop.
+
+    DBOS resumes a recovered workflow on its own background event loop, but our
+    connection, locks and writer tasks belong to the app's loop, so the event is
+    handed over with call_soon_threadsafe. Hand-offs keep their order.
+    """
+    _on_app_loop(lambda: _recorder(run_id).put(e))
+
+
+def finish(run_id: str) -> None:
+    """No more events for this run: flush its queue and stop its writer."""
+    _on_app_loop(lambda: _recorders.pop(run_id).put(None) if run_id in _recorders else None)
+
+
+def _on_app_loop(fn) -> None:
+    try:
+        on_app_loop = asyncio.get_running_loop() is _loop
+    except RuntimeError:  # no loop in this thread
+        on_app_loop = False
+    if on_app_loop:
+        fn()
+    else:
+        _loop.call_soon_threadsafe(fn)
+
+
+def _recorder(run_id: str) -> "RunRecorder":
+    if run_id not in _recorders:
+        _recorders[run_id] = RunRecorder(run_id)
+    return _recorders[run_id]
 
 
 async def stop() -> None:
@@ -112,28 +145,18 @@ async def read_events(run_id: str, after: int = 0) -> list[Event]:
     return [Event(id=f"{run_id}-{seq}", seq=seq, type=type_, data=data, ts=float(ts)) for seq, type_, data, ts in rows]
 
 
-async def run_exists(run_id: str) -> bool:
-    return bool(await _fetch("SELECT 1 FROM event_log WHERE run_id = %s LIMIT 1", (run_id,)))
-
-
 class RunRecorder:
+    """One run's write queue and the background task that drains it (lives on the app's loop)."""
+
     def __init__(self, run_id: str) -> None:
         self.run_id = run_id
-        self.seq = 0
         self._queue: asyncio.Queue[Event | None] = asyncio.Queue()
         task = asyncio.create_task(self._write_all())
         _writers.add(task)
         task.add_done_callback(_writers.discard)
 
-    def record(self, e: Event) -> Event:
-        if e.type not in LIVE_ONLY:
-            self.seq += 1
-            e.seq = self.seq
-        self._queue.put_nowait(e)
-        return e
-
-    def finish(self) -> None:
-        self._queue.put_nowait(None)  # the writer stops after flushing everything before this
+    def put(self, e: Event | None) -> None:
+        self._queue.put_nowait(e)  # None = the writer stops after flushing everything before it
 
     async def _write_all(self) -> None:
         done = False

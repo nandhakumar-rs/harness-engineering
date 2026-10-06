@@ -2,7 +2,7 @@
 
 **Durability** means a run **survives things going wrong**: a page refresh, a dropped connection, a server crash. It doesn't get lost, and finished work doesn't get done twice.
 
-> **Status on `version-3`:** sections 1–8 are built (Postgres, `event_log`, event bus, recording events, the run/viewer split). Sections 9–10 (DBOS workflows and recovery) are **planned** and explained here ahead of time.
+> **Status on `version-3`:** everything below is built: Postgres, `event_log`, the event bus, recording events, the run/viewer split, and DBOS workflows with crash recovery.
 
 ---
 
@@ -204,7 +204,7 @@ Now the run **doesn't belong to any request**. Close the tab and it keeps going.
 
 ---
 
-## 9. Workflows with DBOS (planned)
+## 9. Workflows with DBOS
 
 A **workflow** is our agent loop, with a **checkpoint after every step**.
 
@@ -258,6 +258,24 @@ messages = [system, user ticket]          ← workflow_input
 ### Two rules this creates
 1. **The workflow code must make the same choices every time.** DBOS matches saved results by **position** (1st step, 2nd step…). No `random`, `time` or `uuid4()` directly in the workflow body. Put them in a step, or use `DBOS.workflow_id`.
 2. **Steps can run more than once.** If the server crashes after a step did its work but before its result was saved, the step runs **again**. That's harmless for `classifyTicket`, but dangerous for `sendReply`, which could send the email twice. Real side effects need an **idempotency key**, for example `workflow_id:tool_call_id`.
+
+### What we saw in a real crash test
+We ran `kill -9` on the backend while `searchKnowledgeBase` was running, then started it again. The browser kept retrying its connection and picked up where it left off.
+
+| Step | What happened |
+|---|---|
+| 1 `call_model`, 2 `classifyTicket`, 3 `call_model` | Finished **before** the crash, so **not run again**: two OpenAI calls saved |
+| 4 `searchKnowledgeBase` | Was running when the server died, so it **ran again** after the restart |
+| 5–9 | Ran normally after the restart |
+
+`event_log` ended with 26 rows, numbered 1–26 with no gaps and no duplicates. During recovery the body emitted events 1–10 again, and `ON CONFLICT DO NOTHING` skipped them all.
+
+### Things we learned building it
+- **Stored events are emitted only from the workflow body.** A step doesn't run again during recovery, so an event stored from inside a step would be missing on replay and every later `seq` would shift. That's why `thinking: stopped` is now emitted *after* `call_model` returns, carrying the time of the first chunk. Only the live-only `message.delta` comes from inside the step.
+- **DBOS resumes a recovered workflow on its own background thread.** Our database connection and writer belong to the app's main event loop, so `event_store.record()` hands events over with `call_soon_threadsafe`. For the same reason, the OpenAI client is created inside each `call_model` instead of shared.
+- **The run ID is the workflow ID.** `SetWorkflowID(run_id)` makes starting a run idempotent, so DBOS replaced our own "already started?" check.
+- **Every checkpoint is a database round trip, so put the database near the server.** From this machine Neon (us-east-2) is about 270 ms away, and each step costs about 1.5–3 s of checkpoint writes. A run went from about 10 s to about 40 s. On a server in the same region as the database, that overhead becomes milliseconds. **Durability costs latency.**
+- **Crash tests must kill the right process.** `uvicorn --reload` runs a file-watcher process plus a worker process. Killing only the watcher left the worker running, so the "crash" didn't happen. Kill whatever holds the port.
 
 ---
 

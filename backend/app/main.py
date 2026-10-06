@@ -9,9 +9,15 @@ from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.responses import StreamingResponse  # noqa: E402
 from pydantic import BaseModel, Field  # noqa: E402
 
+from dbos import DBOS  # noqa: E402
+
 from . import bus, event_store, runs  # noqa: E402
-from .db import init_db  # noqa: E402
+from .db import DATABASE_URL, init_db  # noqa: E402
 from .events import to_sse  # noqa: E402
+
+# DBOS keeps its own tables (workflow status, saved step outputs) in a "dbos" schema
+# of the same database. It never reads event_log; event_log is for people and the UI.
+DBOS(config={"name": "harness", "system_database_url": DATABASE_URL})
 
 
 @asynccontextmanager
@@ -19,7 +25,9 @@ async def lifespan(app: FastAPI):
     await init_db()  # create event_log if needed; fails fast if the database is unreachable
     await bus.start()  # LISTEN for live events
     await event_store.start()
+    DBOS.launch()  # also resumes any workflow a crash left unfinished
     yield
+    DBOS.destroy()
     await event_store.stop()  # flush pending writes first
     await bus.stop()
 
@@ -46,7 +54,7 @@ class StartRun(BaseModel):
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "agent": "fake" if runs.USE_FAKE_AGENT else "openai"}
+    return {"ok": True, "agent": "openai", "durable": True}
 
 
 @app.post("/api/runs")

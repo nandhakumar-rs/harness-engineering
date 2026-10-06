@@ -127,6 +127,7 @@ export function useAgentStream() {
           }
           setEvents((prev) => [...prev, e])
           if (e.type === "thinking") setThinking(e.data.status === "started")
+          if (e.type === "message.delta") setThinking(false) // words are arriving: the model is no longer thinking
           setItems((prev) => applyEvent(prev, e))
           if (TERMINAL.has(e.type)) finished = true
         }

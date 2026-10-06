@@ -1,56 +1,37 @@
 """Runs live on their own, not inside an HTTP request.
 
-    POST /api/runs            -> start_run(): starts the agent as a background task
+    POST /api/runs             -> start_run(): starts the agent as a DBOS workflow
     GET  /api/runs/{id}/events -> watch_run(): catch up from event_log, then follow the bus
 
-Closing the browser no longer stops a run, and any number of viewers can
-watch it, joining at any point. (A server crash still kills it: that's what
-the workflow step fixes.)
+Closing the browser doesn't stop a run, any number of viewers can watch it,
+and since Session 2 step 6 a server crash doesn't either: on restart, DBOS
+resumes every unfinished workflow from its last finished step.
 """
 
-import asyncio
-import logging
 import os
 from typing import AsyncIterator
 
+from dbos import DBOS, SetWorkflowID
+
 from . import bus, event_store
-from .events import Event, event
-
-log = logging.getLogger("harness.runs")
-
-# Set to True to go back to the scripted fake run in app/fake_agent.py.
-USE_FAKE_AGENT = False
-
-if USE_FAKE_AGENT:
-    from .fake_agent import run_fake_agent as agent
-else:
-    from .agent import run_agent as agent
+from .agent import agent_workflow
+from .events import Event
 
 MAX_ITERATIONS = int(os.getenv("MAX_ITERATIONS", "6"))
 TERMINAL = {"run.completed", "run.failed"}
 
-_active: dict[str, asyncio.Task] = {}
-
 
 async def start_run(run_id: str, messages: list[dict]) -> bool:
-    """Start a run in the background. Starting the same run_id twice does nothing."""
-    if run_id in _active or await event_store.run_exists(run_id):
+    """Start a run as a workflow whose id is the run id.
+
+    The id makes it idempotent: DBOS never runs the same workflow id twice, so a
+    repeated start (double click, retried request) does nothing.
+    """
+    if await DBOS.get_workflow_status_async(run_id) is not None:
         return False
-    _active[run_id] = asyncio.create_task(_execute(run_id, messages))
-    _active[run_id].add_done_callback(lambda _: _active.pop(run_id, None))
+    with SetWorkflowID(run_id):
+        await DBOS.start_workflow_async(agent_workflow, run_id, messages, MAX_ITERATIONS)
     return True
-
-
-async def _execute(run_id: str, messages: list[dict]) -> None:
-    recorder = event_store.RunRecorder(run_id)
-    try:
-        async for e in agent(run_id, messages, max_iterations=MAX_ITERATIONS):
-            recorder.record(e)
-    except Exception as exc:
-        log.exception("run %s crashed", run_id)
-        recorder.record(event("run.failed", runId=run_id, error=f"{type(exc).__name__}: {exc}"))
-    finally:
-        recorder.finish()
 
 
 async def watch_run(run_id: str, after: int = 0) -> AsyncIterator[Event]:
